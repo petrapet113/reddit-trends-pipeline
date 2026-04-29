@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.duckdb
+*.duckdb.wal
+.env
+.venv/
+venv/
+.idea/
+.vscode/
+*.log
+airflow.db
+airflow.cfg
+webserver_config.py
+logs/
+plugins/
+data/

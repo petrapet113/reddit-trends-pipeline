@@ -1,0 +1,84 @@
+services:
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on: [zookeeper]
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+  airflow:
+    image: apache/airflow:2.10.2-python3.11
+    depends_on: [kafka]
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: sqlite:////opt/airflow/airflow.db
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      DUCKDB_PATH: /opt/airflow/warehouse.duckdb
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./scrapers:/opt/airflow/scrapers
+      - ./sql:/opt/airflow/sql
+      - airflow_state:/opt/airflow
+    ports:
+      - "8080:8080"
+    command: >
+      bash -c "
+        airflow db migrate &&
+        airflow users create --username admin --password admin --firstname Petra --lastname P --role Admin --email petra@local || true &&
+        pip install -q confluent-kafka duckdb openai requests &&
+        airflow standalone
+      "
+
+  consumer:
+    image: python:3.11-slim
+    depends_on: [kafka]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      DUCKDB_PATH: /data/warehouse.duckdb
+    volumes:
+      - ./scrapers:/app/scrapers
+      - ./sql:/app/sql
+      - duckdb_data:/data
+    working_dir: /app
+    command: >
+      bash -c "
+        pip install -q confluent-kafka duckdb &&
+        python scrapers/kafka_consumer.py
+      "
+
+  dashboard:
+    image: python:3.11-slim
+    depends_on: [consumer]
+    environment:
+      DUCKDB_PATH: /data/warehouse.duckdb
+    volumes:
+      - ./dashboard:/app/dashboard
+      - duckdb_data:/data
+    working_dir: /app
+    ports:
+      - "8501:8501"
+    command: >
+      bash -c "
+        pip install -q streamlit duckdb pandas &&
+        streamlit run dashboard/app.py --server.address 0.0.0.0 --server.port 8501
+      "
+
+volumes:
+  airflow_state:
+  duckdb_data:

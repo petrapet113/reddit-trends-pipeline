@@ -1,0 +1,7 @@
+requests==2.32.3
+confluent-kafka==2.5.3
+duckdb==1.1.1
+openai==1.51.0
+streamlit==1.39.0
+pandas==2.2.3
+apache-airflow==2.10.2
